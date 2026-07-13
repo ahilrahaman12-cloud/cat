@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neko Arcade & Sanctuary - Deluxe Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', monospace;
+            background-color: #1a1a24;
+            color: white;
+            padding: 10px 5px;
+            margin: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow-x: hidden;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px !important;
+        }
+        .game-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border: 4px solid #fff;
+            border-radius: 4px;
+            box-shadow: 0 4px 0 #444;
+            box-sizing: border-box;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            background: #25163f; 
+        }
+        .mobile-controls {
+            display: flex; 
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 8px;
+            background: #111;
+            border: 4px solid #fff;
+            border-top: none;
+            touch-action: none;
+            box-sizing: border-box;
+        }
+        .dpad {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-touch {
+            touch-action: none;
+            font-size: 11px !important;
+            padding: 12px 16px !important;
+        }
+        .sanctuary-section {
+            margin-top: 20px;
+            padding: 15px 10px !important;
+        }
+        .cat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 6px;
+            margin-top: 12px;
+        }
+        .cat-card {
+            background-color: #2c3e50 !important;
+            color: #fff;
+            border: 2px solid #fff !important;
+            box-sizing: border-box;
+        }
+        .cat-sprite-box {
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            margin-bottom: 3px;
+            overflow: hidden;
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header class="nes-container is-dark with-title">
+        <h1 class="title" style="font-size: 14px; margin-bottom: 5px;">NEKO ARCADE</h1>
+        <p style="font-size: 8px; margin: 0;">Catch Yarn. Expand the Sanctuary! 🐾</p>
+    </header>
+
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+    </div>
+
+    <div class="mobile-controls" id="mobileControls">
+        <div class="dpad">
+            <button class="nes-btn is-primary btn-touch" id="btnLeft">◀</button>
+            <button class="nes-btn is-primary btn-touch" id="btnRight">▶</button>
+        </div>
+        <div>
+            <button class="nes-btn is-success btn-touch" id="btnDash">DASH</button>
+        </div>
+    </div>
+
+    <section class="sanctuary-section nes-container is-dark with-title">
+        <h2 class="title" style="font-size: 11px;">Sanctuary Roster 🏡</h2>
+        <p style="font-size: 8px; margin-bottom: 5px;">High Score: <span id="highScoreText">0</span> | Total Saved: <span id="catCountText">0</span></p>
+        <div class="cat-grid" id="catGrid"></div>
+    </section>
+</div>
+
+<div class="modal-overlay" id="adoptionModal">
+    <div class="nes-container is-rounded is-dark" style="background-color: #222; max-width: 95%; width: 340px; padding: 15px;">
+        <h3 style="color: #f7d51d; text-align: center; font-size: 12px; margin-bottom: 10px;">🎉 NEW CAT RESCUED! 🎉</h3>
+        <div class="cat-sprite-box" style="height: 60px;">
+            <canvas id="modalCatCanvas" width="56" height="56" style="image-rendering: pixelated; transform: scale(1.1);"></canvas>
+        </div>
+        <div class="nes-field" style="margin-top: 10px;">
+            <label for="catNameInput" style="font-size: 8px;">Give them a name:</label>
+            <input type="text" id="catNameInput" class="nes-input is-success" value="Mochi" style="font-size: 10px; padding: 4px;">
+        </div>
+        <div style="text-align: center; margin-top: 15px;">
+            <button class="nes-btn is-success" id="btnSaveCat" style="font-size: 9px; padding: 6px 12px;">Welcome to Sanctuary</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Audio Synthesis Setup ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, type, duration) {
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        } catch(e) {}
+    }
+    function playCatchSound() { playTone(659.25, 'square', 0.08); }
+    function playGameOverSound() { playTone(180, 'sawtooth', 0.4); }
+    function playVictoryChime() {
+        setTimeout(() => playTone(523.25, 'square', 0.08), 0);
+        setTimeout(() => playTone(659.25, 'square', 0.08), 80);
+        setTimeout(() => playTone(783.99, 'square', 0.08), 160);
+        setTimeout(() => playTone(1046.50, 'square', 0.2), 240);
+    }
+
+    // --- High Fidelity 8-Bit Cat Art Renderer ---
+    function drawDetailedPixelCat(targetCtx, x, y, baseColor, eyeColor = '#2ecc71', innerEarColor = '#ffb8b8', headBob = 0) {
+        targetCtx.fillStyle = "rgba(0,0,0,0.15)";
+        targetCtx.fillRect(x + 4, y + 26, 32, 4);
+
+        targetCtx.fillStyle = baseColor;
+        targetCtx.fillRect(x + 8, y + 8, 28, 16); 
+        targetCtx.fillRect(x + 22, y - 2 + headBob, 14, 14); 
+
+        targetCtx.fillStyle = baseColor;
+        targetCtx.fillRect(x + 22, y - 6 + headBob, 4, 4); 
+        targetCtx.fillRect(x + 32, y - 6 + headBob, 4, 4); 
+        targetCtx.fillStyle = innerEarColor;
+        targetCtx.fillRect(x + 23, y - 4 + headBob, 2, 2); 
+        targetCtx.fillRect(x + 33, y - 4 + headBob, 2, 2);
+
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.fillRect(x + 29, y + 2 + headBob, 6, 4); 
+        targetCtx.fillStyle = eyeColor;
+        targetCtx.fillRect(x + 31, y + 2 + headBob, 2, 4); 
+        targetCtx.fillStyle = '#000000';
+        targetCtx.fillRect(x + 32, y + 3 + headBob, 1, 2); 
+
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.fillRect(x + 33, y + 7 + headBob, 4, 3);
+        targetCtx.fillStyle = '#ff7675';
+        targetCtx.fillRect(x + 35, y + 7 + headBob, 2, 1);
+
+        targetCtx.fillStyle = baseColor;
+        targetCtx.fillRect(x + 2, y + 6, 6, 4);
+        targetCtx.fillRect(x, y + 10, 4, 8);
+        targetCtx.fillStyle = '#ffffff'; 
+        targetCtx.fillRect(x, y + 16, 4, 2);
+
+        targetCtx.fillStyle = '#d63031'; 
+        targetCtx.fillRect(x + 20, y + 11 + headBob, 4, 2);
+        targetCtx.fillStyle = '#f1c40f'; 
+        targetCtx.fillRect(x + 21, y + 13 + headBob, 2, 2);
+
+        targetCtx.fillStyle = baseColor;
+        targetCtx.fillRect(x + 10, y + 24, 4, 3);
+        targetCtx.fillRect(x + 18, y + 24, 4, 3);
+        targetCtx.fillRect(x + 26, y + 24, 4, 3);
+        targetCtx.fillRect(x + 32, y + 24, 4, 3);
+        targetCtx.fillStyle = '#ffffff';
+        targetCtx.fillRect(x + 10, y + 26, 4, 1);
+        targetCtx.fillRect(x + 18, y + 26, 4, 1);
+        targetCtx.fillRect(x + 26, y + 26, 4, 1);
+        targetCtx.fillRect(x + 32, y + 26, 4, 1);
+    }
+
+    const traits = ["Chaos", "Zoomer", "Thief", "Purrer", "Sleepy", "Gentle", "Hunter", "Explorer", "Critic", "Lover"];
+    const catColors = ['#f39c12', '#34495e', '#95a5a6', '#d35400', '#f1c40f', '#ffffff', '#e67e22', '#1abc9c', '#9b59b6', '#ff7979'];
+    const eyeColors = ['#2ecc71', '#f1c40f', '#e74c3c', '#3498db', '#1abc9c', '#9b59b6'];
+
+    // --- Production State Storage ---
+    // Using a brand-new production storage identifier key to completely flush old cache layers
+    let savedRoster = localStorage.getItem('neko_prod_roster');
+    
+    let state = {
+        score: 0,
+        highScore: parseInt(localStorage.getItem('cat_highScore')) || 0,
+        lives: 3,
+        gameState: 'START',
+        adoptedCats: savedRoster ? JSON.parse(savedRoster) : []
+    };
+    
+    if(!savedRoster) {
+        localStorage.setItem('neko_prod_roster', JSON.stringify(state.adoptedCats));
+    }
+
+    let standardMilestone = 50; 
+    let dynamicNextMilestone = 50;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let player = { x: 180, y: 355, width: 44, height: 32, speed: 5, targetSpeed: 5 };
+    let inputs = { left: false, right: false };
+    let yarns = [];
+    let yarnSpawnTimer = 0;
+    let spawnRate = 85; 
+
+    window.addEventListener('load', () => {
+        updateSanctuaryUI();
+        window.addEventListener('keydown', e => handleKey(e, true));
+        window.addEventListener('keyup', e => handleKey(e, false));
+        
+        bindTouchBtn('btnLeft', 'left');
+        bindTouchBtn('btnRight', 'right');
+        
+        const dashBtn = document.getElementById('btnDash');
+        dashBtn.addEventListener('touchstart', (e) => { e.preventDefault(); activateDash(true); });
+        dashBtn.addEventListener('touchend', (e) => { e.preventDefault(); activateDash(false); });
+        
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleCanvasClick(); });
+
+        setInterval(gameLoop, 1000 / 60);
+    });
+
+    function handleKey(e, isDown) {
+        if(e.code === 'ArrowLeft' || e.code === 'KeyA') inputs.left = isDown;
+        if(e.code === 'ArrowRight' || e.code === 'KeyD') inputs.right = isDown;
+        if(e.code === 'Space' || e.code === 'ShiftLeft') activateDash(isDown);
+        if(isDown && state.gameState !== 'PLAYING') handleCanvasClick();
+    }
+
+    function bindTouchBtn(elementId, inputProperty) {
+        const btn = document.getElementById(elementId);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); inputs[inputProperty] = true; });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); inputs[inputProperty] = false; });
+    }
+
+    function activateDash(isTrue) {
+        player.speed = isTrue ? player.targetSpeed * 2.2 : player.targetSpeed;
+    }
+
+    function handleCanvasClick() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        if(state.gameState === 'START' || state.gameState === 'GAMEOVER') {
+            resetGame();
+        }
+    }
+
+    function resetGame() {
+        state.score = 0;
+        state.lives = 3;
+        dynamicNextMilestone = 50;
+        yarns = [];
+        player.x = 180;
+        state.gameState = 'PLAYING';
+    }
+
+    function gameLoop() {
+        updateLogic();
+        renderGraphics();
+    }
+
+    function updateLogic() {
+        if (state.gameState !== 'PLAYING') return;
+
+        if (inputs.left) player.x -= player.speed;
+        if (inputs.right) player.x += player.speed;
+        if (player.x < 0) player.x = 0;
+        if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+
+        yarnSpawnTimer++;
+        if (yarnSpawnTimer >= Math.max(25, spawnRate - Math.floor(state.score / 10) * 6)) {
+            yarnSpawnTimer = 0;
+            yarns.push({
+                x: Math.random() * (canvas.width - 24) + 12,
+                y: -15,
+                radius: 12,
+                speed: (2.5 + Math.random() * 3) * (1 + (state.score / 120)),
+                color: catColors[Math.floor(Math.random() * catColors.length)]
+            });
+        }
+
+        for (let i = yarns.length - 1; i >= 0; i--) {
+            let y = yarns[i];
+            y.y += y.speed;
+
+            if (y.y + y.radius >= player.y && y.x >= player.x - 4 && y.x <= player.x + player.width + 4) {
+                yarns.splice(i, 1);
+                state.score += 10;
+                playCatchSound();
+                
+                if (state.score >= dynamicNextMilestone) {
+                    triggerAdoptionReward();
+                    dynamicNextMilestone += standardMilestone;
+                }
+                continue;
+            }
+
+            if (y.y - y.radius > canvas.height) {
+                yarns.splice(i, 1);
+                state.lives--;
+                if (state.lives <= 0) {
+                    state.gameState = 'GAMEOVER';
+                    playGameOverSound();
+                    if (state.score > state.highScore) {
+                        state.highScore = state.score;
+                        localStorage.setItem('cat_highScore', state.highScore);
+                    }
+                }
+            }
+        }
+    }
+
+    function renderGraphics() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.font = "10px 'Press Start 2P'";
+        ctx.fillText(`SCORE: ${state.score}`, 10, 25);
+        ctx.fillText(`LIVES: ${"❤️".repeat(state.lives)}`, 240, 25);
+
+        if (state.gameState === 'START') {
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "#fff";
+            ctx.textAlign = "center";
+            ctx.font = "12px 'Press Start 2P'";
+            ctx.fillText("TAP SCREEN TO PLAY", canvas.width/2, 185);
+            ctx.fillStyle = "#f7d51d";
+            ctx.font = "9px 'Press Start 2P'";
+            ctx.fillText("CATCH YARN BALLS!", canvas.width/2, 220);
+            ctx.textAlign = "left";
+            return;
+        }
+
+        if (state.gameState === 'GAMEOVER') {
+            ctx.fillStyle = "rgba(0,0,0,0.8)";
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "#e74c3c";
+            ctx.textAlign = "center";
+            ctx.font = "16px 'Press Start 2P'";
+            ctx.fillText("GAME OVER", canvas.width/2, 150);
+            ctx.fillStyle = "#fff";
+            ctx.font = "10px 'Press Start 2P'";
+            ctx.fillText(`SCORE: ${state.score}`, canvas.width/2, 195);
+            ctx.fillStyle = "#f1c40f";
+            ctx.fillText("TAP TO RETRY", canvas.width/2, 245);
+            ctx.textAlign = "left";
+            return;
+        }
+
+        drawDetailedPixelCat(ctx, player.x, player.y, '#f39c12', '#3498db');
+
+        yarns.forEach(y => {
+            ctx.beginPath();
+            ctx.arc(y.x, y.y, y.radius, 0, Math.PI * 2);
+            ctx.fillStyle = y.color;
+            ctx.fill();
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(y.x - y.radius + 4, y.y - 2);
+            ctx.lineTo(y.x + y.radius - 4, y.y + 2);
+            ctx.moveTo(y.x - 2, y.y - y.radius + 4);
+            ctx.lineTo(y.x + 2, y.y + y.radius - 4);
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
+            ctx.stroke();
+        });
+    }
+
+    let pendingCatData = null;
+
+    function triggerAdoptionReward() {
+        playVictoryChime();
+        pendingCatData = {
+            id: Date.now(),
+            color: catColors[Math.floor(Math.random() * catColors.length)],
+            eyeColor: eyeColors[Math.floor(Math.random() * eyeColors.length)],
+            trait: traits[Math.floor(Math.random() * traits.length)],
+            hearts: 0
+        };
+
+        const mCanvas = document.getElementById('modalCatCanvas');
+        const mCtx = mCanvas.getContext('2d');
+        mCtx.clearRect(0,0,56,56);
+        drawDetailedPixelCat(mCtx, 8, 14, pendingCatData.color, pendingCatData.eyeColor);
+
+        document.getElementById('catNameInput').value = "Pancake";
+        document.getElementById('adoptionModal').style.display = 'flex';
+    }
+
+    document.getElementById('btnSaveCat').addEventListener('click', () => {
+        if (!pendingCatData) return;
+        const customName = document.getElementById('catNameInput').value.trim();
+        pendingCatData.name = customName || "Mystery";
+        
+        state.adoptedCats.unshift(pendingCatData); 
+        localStorage.setItem('neko_prod_roster', JSON.stringify(state.adoptedCats));
+        
+        document.getElementById('adoptionModal').style.display = 'none';
+        pendingCatData = null;
+        updateSanctuaryUI();
+    });
+
+    function updateSanctuaryUI() {
+        document.getElementById('highScoreText').innerText = state.highScore;
+        document.getElementById('catCountText').innerText = state.adoptedCats.length;
+        
+        const grid = document.getElementById('catGrid');
+        grid.innerHTML = '';
+
+        if(state.adoptedCats.length === 0) {
+            grid.innerHTML = '<p style="font-size:7px; color:#aaa; width:100%; text-align:center; padding:15px; margin:0;">Sanctuary is empty! Save cats by playing.</p>';
+            return;
+        }
+
+        state.adoptedCats.forEach((cat, index) => {
+            const card = document.createElement('div');
+            card.className = 'nes-container is-rounded cat-card';
+            card.style.padding = "3px"; 
+            
+            card.innerHTML = `
+                <div class="cat-sprite-box">
+                    <canvas id="canvas-cat-${cat.id}" width="56" height="56" style="image-rendering:pixelated; transform: scale(0.55); margin-top:-3px;"></canvas>
+                </div>
+                <div style="font-size:6px; margin-top:1px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><strong>${cat.name}</strong></div>
+                <div style="font-size:5px; color:#f1c40f; text-align:center; margin: 1px 0; height: 8px; display:flex; align-items:center; justify-content:center;">"${cat.trait}"</div>
+                <div style="font-size:5px; text-align:center; margin-bottom: 3px;">${"❤️".repeat(cat.hearts || 0)}</div>
+                <div style="display:flex; gap:2px; justify-content:center;">
+                    <button class="nes-btn is-warning is-mini" onclick="interactCat(${index}, 'feed')" style="font-size:5px; padding:1px 2px; line-height:1;">F</button>
+                    <button class="nes-btn is-error is-mini" onclick="interactCat(${index}, 'pet')" style="font-size:5px; padding:1px 2px; line-height:1;">P</button>
+                </div>
+            `;
+            grid.appendChild(card);
+
+            setTimeout(() => {
+                const c = document.getElementById(`canvas-cat-${cat.id}`);
+                if (c) {
+                    const ctxC = c.getContext('2d');
+                    drawDetailedPixelCat(ctxC, 8, 14, cat.color, cat.eyeColor);
+                }
+            }, 0);
+        });
+    }
+
+    window.interactCat = function(index, action) {
+        let cat = state.adoptedCats[index];
+        if(cat.hearts === undefined) cat.hearts = 0;
+        
+        if (cat.hearts < 5) {
+            cat.hearts++;
+            playTone(action === 'feed' ? 600 : 800, 'sine', 0.05);
+            localStorage.setItem('neko_prod_roster', JSON.stringify(state.adoptedCats));
+            updateSanctuaryUI();
+        } else {
+            playTone(900, 'sine', 0.1);
+            alert(`${cat.name} is maximally loved!`);
+        }
+    };
+</script>
+</body>
+</html>
